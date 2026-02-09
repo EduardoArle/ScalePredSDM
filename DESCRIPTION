@@ -1,0 +1,22 @@
+Package: ScalePredSDM
+Title: Scale-of-Effect Predictor Generation for Species Distribution Models
+Version: 0.1.0
+Authors@R: 
+    person("Ole", "Sørensen", , "ole.johs.sorensen@gmail.com", role = c("aut", "cre"))
+Description: Tools to generate, evaluate and assemble scale-of-effect
+    environmental predictors for fine-scale species distribution models,
+    with an emphasis on high-resolution marine and terrestrial data.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports:
+    terra,
+    sf,
+    stats,
+    dplyr
+Suggests:
+    ggplot2,
+    rmarkdown,
+    knitr
+VignetteBuilder: knitr
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
