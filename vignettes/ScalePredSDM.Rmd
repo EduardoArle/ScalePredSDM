@@ -1,0 +1,162 @@
+---
+title: "ScalePredSDM: Estimating scale of effect"
+author: "Ole J. R. Sørensen"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ScalePredSDM: Estimating scale of effect}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+```{r}
+library(ScalePredSDM)
+library(terra)
+library(sf)
+library(ggplot2)
+```
+
+
+#Create virtual predictors - Depth and some rare habitat for this example
+```{r}
+# patchy continuous predictor (e.g. depth), no monotonic gradient
+r1 <- rast(
+  nrows = 50, ncols = 50,
+  xmin = 0, xmax = 1000,
+  ymin = 0, ymax = 1000,
+  crs  = "EPSG:32636"
+)
+
+set.seed(10)
+
+# base random field
+values(r1) <- rnorm(ncell(r1))
+
+# multi-scale smoothing to induce patchiness
+r1_s1 <- terra::focal(r1, w = matrix(1, 5, 5),  fun = "mean", na.rm = TRUE)
+r1_s2 <- terra::focal(r1, w = matrix(1, 11, 11), fun = "mean", na.rm = TRUE)
+
+# combine scales
+r1 <- 0.6 * r1_s1 + 0.4 * r1_s2
+
+# rescale for readability
+r1 <- terra::scale(r1)
+names(r1) <- "depth"
+
+# rare, patchy binary habitat
+r2 <- rast(
+  nrows = 50, ncols = 50,
+  xmin = 0, xmax = 1000,
+  ymin = 0, ymax = 1000,
+  crs  = "EPSG:32636"
+)
+
+#set.seed(42)
+values(r2) <- runif(ncell(r2))
+
+# smooth to create spatial patches
+w <- matrix(1, nrow = 9, ncol = 9)
+r2_smooth <- terra::focal(r2, w = w, fun = "mean", na.rm = TRUE)
+
+# threshold to make habitat rare (~15%)
+thr <- quantile(values(r2_smooth), probs = 0.90, na.rm = TRUE)
+r2 <- as.numeric(r2_smooth >= thr)
+
+names(r2) <- "habitat_binary"
+```
+#Generate some random survey points
+
+```{r}
+#set.seed(24)
+
+n_points <- 50
+pts <- data.frame(
+  x = runif(n_points, 0, 1000),
+  y = runif(n_points, 0, 1000)
+)
+
+pts_sf <- st_as_sf(pts, coords = c("x", "y"), crs = 32636)
+
+```
+
+#Simmulate abundance that is somewhat correlated with the rare habitat
+```{r}
+#Simulate abundance that increases near rare habitat patches
+# (i.e. a spatial neighbourhood effect, not point-only)
+
+# distance to nearest habitat cell
+dist_to_habitat <- terra::distance(r2 == 1)
+
+# extract distance at survey points
+d <- terra::extract(dist_to_habitat, terra::vect(pts_sf))[, 2]
+
+#set.seed(5)
+# Abundance was simulated as a distance-decay function from rare habitat patches, with effect size chosen to ensure a clear neighbourhood-scale signal.
+
+mu <- 5 + 12 * exp(-d / 100)
+
+pts_sf$abundance <- round(
+  mu + rnorm(length(mu), mean = 0, sd = 0.5)
+)
+
+pts_sf$abundance[pts_sf$abundance < 0] <- 0
+```
+
+
+#Assemble the predictor stack
+```{r}
+predictors <- c(r1, r2)
+names(predictors) <- c("depth", "habitat_binary")
+
+```
+
+#Estimate the scale of effect for each predictor
+```{r}
+res <- estimate_SoE_correlations(
+  predictors   = predictors,
+  points_sf    = pts_sf,
+  response_col = "abundance",
+  scales_m     = c(50, 100, 150, 200),
+  fun_by_pred  = c(
+    depth = "mean",
+    habitat_binary = "sum"
+  ),
+  return_plot = TRUE
+)
+
+res$plot
+
+```
+
+#Assemble a Scale of Effect predictor stack
+```{r}
+SoE_table <- res$best_scales[, c("predictor", "scale")]
+names(SoE_table)[2] <- "scale_m"
+
+soe_stack <- build_SoE_stack_fast(
+  predictors  = predictors,
+  SoE_table   = SoE_table,
+  fun_by_pred = c(
+    depth = "mean",
+    habitat_binary = "sum"
+  ),
+  quiet = TRUE
+)
+
+
+combined_stack <- c(predictors, soe_stack)
+
+plot(combined_stack)
+```
+
+
+
