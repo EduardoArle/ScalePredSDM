@@ -1,5 +1,6 @@
 #' Build a scale-of-effect (SoE) raster stack from original predictors
 #'
+#'
 #' Given (i) an original predictor raster stack and (ii) a table of selected
 #' scales-of-effect, this function produces a new raster stack in which each
 #' predictor is represented at its selected spatial scale.
